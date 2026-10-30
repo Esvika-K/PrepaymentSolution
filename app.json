@@ -1,0 +1,69 @@
+{
+  "id": "f1054153-02ca-41c9-845c-f7695969c5ee",
+  "name": "PrepaymentSolution",
+  "publisher": "Esvika",
+  "version": "28.0.0.6",
+  "brief": "",
+  "description": "",
+  "privacyStatement": "",
+  "EULA": "",
+  "help": "",
+  "url": "",
+  "logo": "",
+  "dependencies": [
+    {
+      "id": "437dbf0e-84ff-417a-965d-ed2bb9650972",
+      "name": "Base Application",
+      "publisher": "Microsoft",
+      "version": "27.3.44313.0"
+    },
+    {
+      "id": "63ca2fa4-4f03-4f2b-a480-172fef340d3f",
+      "name": "System Application",
+      "publisher": "Microsoft",
+      "version": "27.2.42879.0"
+    },
+    {
+      "id": "f3552374-a1f2-4356-848e-196002525837",
+      "name": "Business Foundation",
+      "publisher": "Microsoft",
+      "version": "27.3.44313.45677"
+    },
+    {
+      "id": "58623bfa-0559-4bc2-ae1c-0979c29fd9e0",
+      "name": "Intelligent Cloud Base",
+      "publisher": "Microsoft",
+      "version": "27.2.42879.0"
+    },
+    {
+      "id": "ea130081-c669-460f-a5f4-5dde14f03131",
+      "name": "Statistical Accounts",
+      "publisher": "Microsoft",
+      "version": "27.2.42879.0"
+    },
+    {
+      "id": "7d6b97bf-35bc-4dfa-b2af-72d54b3f4a86",
+      "name": "Esvika basic",
+      "publisher": "Esvika",
+      "version": "1.0.0.424"
+    }
+  ],
+  "screenshots": [],
+  "platform": "1.0.0.0",
+  "application": "28.5.0.0",
+  "idRanges": [
+    {
+      "from": 60100,
+      "to": 60149
+    }
+  ],
+  "resourceExposurePolicy": {
+    "allowDebugging": true,
+    "allowDownloadingSource": true,
+    "includeSourceInSymbolFile": true
+  },
+  "runtime": "17.0",
+  "features": [
+    "NoImplicitWith"
+  ]
+}

@@ -1,0 +1,5 @@
+*.app
+/.vscode/rad.json
+/.vscode/.alcache/
+/.vscode/.altemplates/
+.vscode/rad.json

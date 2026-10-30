@@ -1,0 +1,249 @@
+--- a/app.json
++++ b/app.json
+@@ -2,7 +2,7 @@
+     "id": "7d6b97bf-35bc-4dfa-b2af-72d54b3f4a86",
+     "name": "Esvika basic",
+     "publisher": "Esvika",
+-    "version": "1.0.0.422",
++    "version": "1.0.0.424",
+     "logo": "logo.gif",
+     "dependencies": [
+         {
+--- a/CodeUnits/Cod50101.SalesEvents.al
++++ b/CodeUnits/Cod50101.SalesEvents.al
+@@ -626,7 +626,8 @@
+     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post", OnBeforeCheckCustBlockage, '', false, false)]
+     local procedure custBlockShip(CustCode: Code[20]; SalesHeader: Record "Sales Header"; var ExecuteDocCheck: Boolean; var IsHandled: Boolean; var TempSalesLine: Record "Sales Line" temporary)
+     begin
+-        SalesHeader.CalcFields("Recived Amount", "Amount Including VAT");
++        SalesHeader.CalcFields("Amount Including VAT");
++        CalcReceivedAmount(SalesHeader);
+         IF SalesHeader."Recived Amount" >= SalesHeader."Amount Including VAT" then
+             IsHandled := true;
+     end;
+@@ -721,7 +722,7 @@
+         giftcards: Record "Gift Cards ESV";
+     begin
+         //e-arvet ei edasta, kui raha makstud
+-        SalesHeader.CalcFields("Recived Amount");
++        CalcReceivedAmount(SalesHeader);
+         SalesHeader.setfilter("Payment Terms Code", 'KAARDIGA|SULARAHA');
+         IF SalesHeader."Recived Amount" <> 0 then
+             SalesHeader."TED Do Not Send as E-Document" := true;
+@@ -1154,4 +1155,15 @@
+ 
+     end;
+ 
++
++    procedure CalcReceivedAmount(var SalesHeader: Record "Sales Header")
++    begin
++        SalesHeader.CalcFields("Recived Amount");
++        OnAfterCalcReceivedAmount(SalesHeader);
++    end;
++
++    [IntegrationEvent(false, false)]
++    local procedure OnAfterCalcReceivedAmount(var SalesHeader: Record "Sales Header")
++    begin
++    end;
+ }
+--- a/CodeUnits/Cod50106.PurchaseEvents.al
++++ b/CodeUnits/Cod50106.PurchaseEvents.al
+@@ -73,7 +73,7 @@
+                     ShouldProcess := false;
+                 IF PaymentT.get(salesH."Payment Terms Code") then begin
+                     if PaymentT.Paid = true then begin
+-                        salesH.CalcFields("Recived Amount");
++                        PPReceiptEvents.CalcReceivedAmount(salesH);
+                         If salesH."Recived Amount" <= 0 then
+                             ShouldProcess := false;
+                     end;
+@@ -677,4 +677,6 @@
+     //         until SP.next = 0;
+     // end;
+ 
++    var
++        PPReceiptEvents: Codeunit "Sales Events";
+ }
+--- a/CodeUnits/Cod50111.Summaryinvoiceandemail.al
++++ b/CodeUnits/Cod50111.Summaryinvoiceandemail.al
+@@ -22,7 +22,13 @@
+         SalesOrder.Setfilter("Invoicing Date", '..%1&<>%2', Today, 0D);
+         SalesOrder.SetRange("Completely Shipped", true);
+         SalesOrder.SetRange("Shipped Not Invoiced", true);
+-        SalesOrder.SetFilter("Recived Amount", '<>%1', 0);
++        // A FlowField filter cannot include allocations stored in the separate payment app.
++        if SalesOrder.FindSet() then
++            repeat
++                PPReceiptEvents.CalcReceivedAmount(SalesOrder);
++                SalesOrder.Mark(SalesOrder."Recived Amount" <> 0);
++            until SalesOrder.Next() = 0;
++        SalesOrder.MarkedOnly(true);
+         IF SalesOrder.findset then begin
+             SalesOrder.SetFilter("No.", SelectionFilterManagement.GetSelectionFilterForSalesHeader(SalesOrder));
+             patchPost.InitializeRequest(false, true, WorkDate(), WorkDate(), false, false, false, false);
+@@ -178,4 +184,6 @@
+             Customer.MODIFY;
+         END;
+     end;
++    var
++        PPReceiptEvents: Codeunit "Sales Events";
+ }
+--- a/Page/Pag50122.Payment.al
++++ b/Page/Pag50122.Payment.al
+@@ -215,7 +215,6 @@
+     var
+         PaymentMethod: Record "Payment Method";
+         GenJrnTempl: Record "Gen. Journal Template";
+-        CustLedEntry: Record "Cust. Ledger Entry";
+         SL: Record "Sales Line";
+         CustPost: Record "Customer Posting Group";
+     begin
+@@ -231,7 +230,7 @@
+                     Rounding += sl.Amount;
+                 until sl.next = 0;
+         end;
+-        //salesH.CalcFields("Recived Amount");
++        PPReceiptEvents.CalcReceivedAmount(salesH);
+         GenJrnTempl.SetRange(Type, GenJrnTempl.Type::"Cash Receipts");
+         IF GenJrnTempl.FindFirst() then
+             Payment.SetRange("Journal Template Name", GenJrnTempl.Name);
+@@ -272,14 +271,7 @@
+         PaymentMethod.get(UserS."Cash Payment");
+         IF PaymentMethod."Payment Terms Code" <> '' then
+             cashPaymTerm := PaymentMethod."Payment Terms Code";
+-        paid := 0;
+-        CustLedEntry.SetRange("Sales Order No.", salesh."No.");
+-        CustLedEntry.SetRange(Reversed, false);
+-        IF CustLedEntry.FindSet() then
+-            repeat
+-                CustLedEntry.CalcFields(Amount);
+-                Paid += -CustLedEntry.Amount;
+-            until CustLedEntry.next = 0;
++        Paid := salesH."Recived Amount";
+ 
+ 
+ 
+@@ -314,7 +306,8 @@
+         GiftCard := 0;
+         PaymentMethod.get(Account);
+         PaymentMethod.TestField("Bal. Account No.");
+-        SalesH.CalcFields("Recived Amount", "Amount Including VAT");
++        SalesH.CalcFields("Amount Including VAT");
++        PPReceiptEvents.CalcReceivedAmount(SalesH);
+         UserS.get(UserId);
+         UserS.TestField("Card Payment");
+         UserS.TestField("Cash Payment");
+@@ -434,4 +427,6 @@
+     end;
+ 
+ 
++    var
++        PPReceiptEvents: Codeunit "Sales Events";
+ }
+--- a/Page/Pag50134.CustLedgerEntryPayment.al
++++ b/Page/Pag50134.CustLedgerEntryPayment.al
+@@ -78,6 +78,7 @@
+     begin
+         Rec.SetRange("Sales Order No.", _OrderNo);
+         rec.SetRange(Reversed, false);
++        OnAfterSetOrderPaymentFilters(Rec, _OrderNo);
+     end;
+ 
+     procedure InitFilter(var OrderNo: code[20])
+@@ -85,4 +86,9 @@
+     begin
+         _OrderNo := OrderNo;
+     end;
++
++    [IntegrationEvent(false, false)]
++    local procedure OnAfterSetOrderPaymentFilters(var CustomerEntry: Record "Cust. Ledger Entry"; OrderNo: Code[20])
++    begin
++    end;
+ }
+--- a/Page Ext/Req-Pag-Ext50125.ReqWorksheetExt.al
++++ b/Page Ext/Req-Pag-Ext50125.ReqWorksheetExt.al
+@@ -42,7 +42,7 @@
+                         repeat
+                             IF SalesOrderh.get(SalesOrderL."Document Type", SalesOrderL."Document No.") and (SalesOrderH.Status = SalesOrderH.Status::Released) then begin
+                                 IF Payment.get(SalesOrderH."Payment Terms Code") and (Payment.Paid = true) then begin
+-                                    SalesOrderH.CalcFields("Recived Amount");
++                                    PPReceiptEvents.CalcReceivedAmount(SalesOrderH);
+                                     IF SalesOrderH."Recived Amount" > 0 then
+                                         SalesOrderL.Mark(true);
+                                 end else
+@@ -103,7 +103,7 @@
+             repeat
+                 IF SalesOrderh.get(SalesOrderL."Document Type", SalesOrderL."Document No.") and (SalesOrderH.Status = SalesOrderH.Status::Released) then begin
+                     IF Payment.get(SalesOrderH."Payment Terms Code") and (Payment.Paid = true) then begin
+-                        SalesOrderH.CalcFields("Recived Amount");
++                        PPReceiptEvents.CalcReceivedAmount(SalesOrderH);
+                         IF SalesOrderH."Recived Amount" > 0 then
+                             QtyOnSalesOrder += SalesOrderL."Outstanding Qty. (Base)";
+                     end else
+@@ -111,4 +111,6 @@
+                 end;
+             until SalesOrderL.Next() = 0;
+     end;
++    var
++        PPReceiptEvents: Codeunit "Sales Events";
+ }
+--- a/Page Ext/SO-Pag-Ext50108.SalesOrderExt.al
++++ b/Page Ext/SO-Pag-Ext50108.SalesOrderExt.al
+@@ -227,7 +227,8 @@
+ 
+                     IF Rec.Status = Rec.Status::Open then
+                         Rec.PerformManualRelease();
+-                    rec.CalcFields("Amount Including VAT", "Recived Amount");
++                    rec.CalcFields("Amount Including VAT");
++                    PPReceiptEvents.CalcReceivedAmount(rec);
+                     if (Blocked = true) and (rec."Recived Amount" = rec."Amount Including VAT") then
+                         Blocked := false;
+ 
+@@ -236,7 +237,8 @@
+                         Payment.RunModal();
+                     end;
+                     IF Blocked = true then begin
+-                        rec.CalcFields("Amount Including VAT", "Recived Amount");
++                        rec.CalcFields("Amount Including VAT");
++                        PPReceiptEvents.CalcReceivedAmount(rec);
+                         IF rec."Recived Amount" < rec."Amount Including VAT" then
+                             error(StrSubstNo(
+                                             Text006, Cust."No.", Cust.Blocked, rec."Amount Including VAT", rec."Recived Amount"));
+@@ -524,7 +526,8 @@
+             var
+                 payment: Page Payment;
+             begin
+-                rec.CalcFields("Amount Including VAT", "Recived Amount");
++                rec.CalcFields("Amount Including VAT");
++                PPReceiptEvents.CalcReceivedAmount(rec);
+                 If (Rec."Due Date" = Today) and (rec."Amount Including VAT" <> rec."Recived Amount") then begin
+                     Payment.SalesHeader(Rec);
+                     Payment.RunModal();
+@@ -612,4 +615,13 @@
+     end;
+ 
+ 
++    var
++        PPReceiptEvents: Codeunit "Sales Events";
++
++    trigger OnAfterGetRecord()
++    var
++        ReceiptEvents: Codeunit "Sales Events";
++    begin
++        ReceiptEvents.CalcReceivedAmount(Rec);
++    end;
+ }
+--- a/Page Ext/SO-Pag-Ext50131.SalesOrdersExt.al
++++ b/Page Ext/SO-Pag-Ext50131.SalesOrdersExt.al
+@@ -37,4 +37,11 @@
+     //             rec.SetFilter("Salesperson Code", UserSetup."Salespers./Purch. Code");
+     //     end;
+     // end;
++
++    trigger OnAfterGetRecord()
++    var
++        ReceiptEvents: Codeunit "Sales Events";
++    begin
++        ReceiptEvents.CalcReceivedAmount(Rec);
++    end;
+ }
